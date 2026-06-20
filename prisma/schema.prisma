@@ -1,0 +1,231 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+  output     = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model th_mante {
+  mante_id Int       @id @default(autoincrement())
+  dispo_id String?   @db.VarChar(20)
+  mante_ta String    @db.VarChar(100)
+  mante_fe DateTime? @default(now()) @db.Timestamp(6)
+  mante_ob String?
+  usuar_id Int?
+  mante_re Boolean?  @default(false)
+  tt_dispo tt_dispo? @relation(fields: [dispo_id], references: [dispo_id], onUpdate: NoAction)
+  tm_usuar tm_usuar? @relation(fields: [usuar_id], references: [usuar_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([dispo_id], map: "idx_mante_dispo")
+}
+
+model th_rihri {
+  rihri_id Int       @id @default(autoincrement())
+  cante_id String    @db.VarChar(10)
+  rihri_ta String?   @default("Automático") @db.VarChar(20)
+  rihri_fi DateTime? @default(now()) @db.Timestamp(6)
+  rihri_ff DateTime? @db.Timestamp(6)
+  rihri_vl Decimal?  @db.Decimal(10, 2)
+  progr_id Int?
+  usuar_id Int?
+  tm_cante tm_cante  @relation(fields: [cante_id], references: [cante_id], onDelete: Cascade, onUpdate: NoAction)
+  tt_progr tt_progr? @relation(fields: [progr_id], references: [progr_id], onUpdate: NoAction)
+  tm_usuar tm_usuar? @relation(fields: [usuar_id], references: [usuar_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([cante_id, rihri_fi(sort: Desc)], map: "idx_rihri_cante_fi")
+}
+
+model tm_cante {
+  cante_id String     @id @db.VarChar(10)
+  cante_nm String     @db.VarChar(100)
+  inver_id String?    @db.VarChar(20)
+  culti_id Int?
+  cante_mi Decimal?   @db.Decimal(5, 2)
+  cante_ma Decimal?   @db.Decimal(5, 2)
+  cante_an Decimal?   @db.Decimal(5, 2)
+  cante_la Decimal?   @db.Decimal(5, 2)
+  pos_xm   Decimal?   @db.Decimal(8, 2)
+  pos_ym   Decimal?   @db.Decimal(8, 2)
+  orienta  String?    @default("horizontal") @db.VarChar(20)
+  th_rihri th_rihri[]
+  tm_culti tm_culti?  @relation(fields: [culti_id], references: [culti_id], onDelete: NoAction, onUpdate: NoAction)
+  tm_inver tm_inver?  @relation(fields: [inver_id], references: [inver_id], onDelete: Cascade, onUpdate: NoAction)
+  tt_dispo tt_dispo[]
+  tt_progr tt_progr[]
+}
+
+model tm_culti {
+  culti_id Int        @id @default(autoincrement())
+  culti_nm String     @unique @db.VarChar(100)
+  culti_mi Decimal?   @db.Decimal(5, 2)
+  culti_ma Decimal?   @db.Decimal(5, 2)
+  tm_cante tm_cante[]
+}
+
+model tm_inver {
+  inver_id  String     @id @db.VarChar(20)
+  inver_nm  String     @db.VarChar(100)
+  inver_ub  String?    @db.VarChar(255)
+  inver_est String?    @default("activo") @db.VarChar(20)
+  inver_ma  Boolean?   @default(false)
+  inver_fc  DateTime?  @default(now()) @db.Timestamp(6)
+  inver_an  Decimal?   @db.Decimal(10, 2)
+  inver_la  Decimal?   @db.Decimal(10, 2)
+  inver_pa  Decimal?   @db.Decimal(5, 2)
+  tm_cante  tm_cante[]
+  tt_dispo  tt_dispo[]
+}
+
+model tm_permi {
+  permi_id Int        @id @default(autoincrement())
+  permi_nm String     @unique @db.VarChar(100)
+  permi_ds String?    @db.VarChar(255)
+  tt_rolpe tt_rolpe[]
+}
+
+model tm_roles {
+  roles_id Int        @id @default(autoincrement())
+  roles_nm String     @unique @db.VarChar(50)
+  roles_ds String?    @db.VarChar(255)
+  tm_usuar tm_usuar[]
+  tt_rolpe tt_rolpe[]
+}
+
+model tm_tipal {
+  tipal_id Int        @id @default(autoincrement())
+  tipal_nm String     @unique @db.VarChar(50)
+  tipal_ds String?    @db.VarChar(255)
+  tt_alert tt_alert[]
+}
+
+model tm_tipod {
+  tipod_id Int        @id @default(autoincrement())
+  tipod_nm String     @unique @db.VarChar(100)
+  tt_dispo tt_dispo[]
+}
+
+model tm_unidm {
+  unidm_id Int        @id @default(autoincrement())
+  unidm_nm String     @unique @db.VarChar(50)
+  unidm_ab String     @db.VarChar(10)
+  tt_lectu tt_lectu[]
+}
+
+model tm_usuar {
+  usuar_id  Int        @id @default(autoincrement())
+  usuar_nm  String     @db.VarChar(100)
+  usuar_ap  String?    @db.VarChar(100)
+  usuar_em  String     @unique @db.VarChar(150)
+  usuar_pw  String     @db.VarChar(255)
+  usuar_mn  String?    @default("email") @db.VarChar(20)
+  usuar_ti  String?    @db.VarChar(100)
+  roles_id  Int?
+  usuar_fc  DateTime?  @default(now()) @db.Timestamp(6)
+  usuar_at  DateTime?  @db.Timestamp(6)
+  usuar_est String?    @default("activo") @db.VarChar(20)
+  th_mante  th_mante[]
+  th_rihri  th_rihri[]
+  tm_roles  tm_roles?  @relation(fields: [roles_id], references: [roles_id], onDelete: NoAction, onUpdate: NoAction)
+  tp_param  tp_param[]
+}
+
+model tp_param {
+  param_id Int       @id @default(autoincrement())
+  param_cl String    @unique @db.VarChar(100)
+  param_vl String    @db.VarChar(255)
+  param_ds String?   @db.VarChar(255)
+  param_um DateTime? @default(now()) @db.Timestamp(6)
+  param_iu Int?
+  tm_usuar tm_usuar? @relation(fields: [param_iu], references: [usuar_id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model tt_alert {
+  alert_id Int       @id @default(autoincrement())
+  dispo_id String?   @db.VarChar(20)
+  tipal_id Int
+  alert_ti String?   @db.VarChar(255)
+  alert_fd DateTime? @default(now()) @db.Timestamp(6)
+  alert_ea String?   @default("activa") @db.VarChar(20)
+  tt_dispo tt_dispo? @relation(fields: [dispo_id], references: [dispo_id], onUpdate: NoAction)
+  tm_tipal tm_tipal  @relation(fields: [tipal_id], references: [tipal_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([alert_ea], map: "idx_alert_ea")
+}
+
+model tt_dispo {
+  dispo_id String     @id @db.VarChar(20)
+  dispo_tg String?    @db.VarChar(100)
+  tipod_id Int
+  cante_id String?    @db.VarChar(10)
+  inver_id String?    @db.VarChar(20)
+  dispo_et String?    @default("Operativo") @db.VarChar(20)
+  dispo_sm Boolean?   @default(false)
+  dispo_fc DateTime?  @default(now()) @db.Timestamp(6)
+  th_mante th_mante[]
+  tt_alert tt_alert[]
+  tm_cante tm_cante?  @relation(fields: [cante_id], references: [cante_id], onUpdate: NoAction)
+  tm_inver tm_inver?  @relation(fields: [inver_id], references: [inver_id], onDelete: Cascade, onUpdate: NoAction)
+  tm_tipod tm_tipod   @relation(fields: [tipod_id], references: [tipod_id], onDelete: NoAction, onUpdate: NoAction)
+  tt_lectu tt_lectu[]
+  tt_logco tt_logco[]
+}
+
+model tt_lectu {
+  lectu_id Int       @id @default(autoincrement())
+  dispo_id String    @db.VarChar(20)
+  lectu_vl Decimal   @db.Decimal(10, 2)
+  unidm_id Int
+  lectu_fh DateTime? @default(now()) @db.Timestamp(6)
+  tt_dispo tt_dispo  @relation(fields: [dispo_id], references: [dispo_id], onDelete: Cascade, onUpdate: NoAction)
+  tm_unidm tm_unidm  @relation(fields: [unidm_id], references: [unidm_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([dispo_id, lectu_fh(sort: Desc)], map: "idx_lectu_dispo_fh")
+}
+
+model tt_logco {
+  logco_id Int       @id @default(autoincrement())
+  dispo_id String    @db.VarChar(20)
+  logco_ev String    @db.VarChar(50)
+  logco_fh DateTime? @default(now()) @db.Timestamp(6)
+  tt_dispo tt_dispo  @relation(fields: [dispo_id], references: [dispo_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([dispo_id, logco_fh(sort: Desc)], map: "idx_logco_dispo_fh")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tt_progd {
+  progd_id Int      @id @default(autoincrement())
+  progr_id Int
+  progd_da Int
+  tt_progr tt_progr @relation(fields: [progr_id], references: [progr_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([progr_id, progd_da])
+}
+
+model tt_progr {
+  progr_id Int        @id @default(autoincrement())
+  cante_id String     @db.VarChar(10)
+  progr_hi DateTime   @db.Time(6)
+  progr_dr Int
+  progr_at Boolean?   @default(true)
+  progr_fc DateTime?  @default(now()) @db.Timestamp(6)
+  th_rihri th_rihri[]
+  tt_progd tt_progd[]
+  tm_cante tm_cante   @relation(fields: [cante_id], references: [cante_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([cante_id], map: "idx_progr_cante")
+}
+
+model tt_rolpe {
+  rolpe_id Int      @id @default(autoincrement())
+  roles_id Int
+  permi_id Int
+  tm_permi tm_permi @relation(fields: [permi_id], references: [permi_id], onDelete: Cascade, onUpdate: NoAction)
+  tm_roles tm_roles @relation(fields: [roles_id], references: [roles_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([roles_id, permi_id])
+}

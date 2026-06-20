@@ -1,0 +1,20 @@
+{
+  "name": "sagrih-simulador",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Simulador IoT como Microservicio",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/pg": "^8.20.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
