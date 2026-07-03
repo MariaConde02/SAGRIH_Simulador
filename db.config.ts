@@ -29,10 +29,16 @@ export async function cargarCache() {
   }
 
   const resDisp = await prisma.$queryRaw<any[]>`
-    SELECT d.DISPO_ID, d.DISPO_TG, d.TIPOD_ID, t.TIPOD_NM, d.CANTE_ID, d.INVER_ID, d.DISPO_ET
+    SELECT d.DISPO_ID, d.DISPO_TG, d.TIPOD_ID, t.TIPOD_NM, d.CANTE_ID, d.INVER_ID, d.DISPO_ET,
+           COALESCE(c.CANTE_MA, cu.CULTI_MA) as umbral_maximo,
+           COALESCE(c.CANTE_MI, cu.CULTI_MI) as umbral_minimo,
+           i.INVER_EST
      FROM TT_DISPO d
      JOIN TM_TIPOD t ON t.TIPOD_ID = d.TIPOD_ID
-     WHERE d.DISPO_ET = 'Operativo'
+     LEFT JOIN TM_CANTE c ON d.CANTE_ID = c.CANTE_ID
+     LEFT JOIN TM_CULTI cu ON c.CULTI_ID = cu.CULTI_ID
+     LEFT JOIN TM_INVER i ON d.INVER_ID = i.INVER_ID
+     WHERE d.DISPO_ET IN ('Operativo', 'Abierta')
      ORDER BY d.DISPO_ID
   `;
 
@@ -44,7 +50,7 @@ export async function cargarCache() {
         in: [
          'HUMEDAD_MIN_CRITICO', 'HUMEDAD_OPTIMO_INFERIOR', 'HUMEDAD_OPTIMO_SUPERIOR',
          'TANQUE_CAPACIDAD', 'TANQUE_ALERTA_BAJA', 'TANQUE_ALERTA_CRITICA',
-         'RIEGO_CAUDAL_NOMINAL', 'BOMBA_ACTIVA'
+         'RIEGO_CAUDAL_NOMINAL', 'BOMBA_ACTIVA', 'TIEMPO_MAX_MANUAL'
         ]
       }
     }

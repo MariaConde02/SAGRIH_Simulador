@@ -1,7 +1,7 @@
 generator client {
   provider   = "prisma-client-js"
-  engineType = "library"
   output     = "../generated/prisma"
+  engineType = "library"
 }
 
 datasource db {
@@ -40,22 +40,30 @@ model th_rihri {
 }
 
 model tm_cante {
-  cante_id String     @id @db.VarChar(10)
-  cante_nm String     @db.VarChar(100)
-  inver_id String?    @db.VarChar(20)
-  culti_id Int?
-  cante_mi Decimal?   @db.Decimal(5, 2)
-  cante_ma Decimal?   @db.Decimal(5, 2)
-  cante_an Decimal?   @db.Decimal(5, 2)
-  cante_la Decimal?   @db.Decimal(5, 2)
-  pos_xm   Decimal?   @db.Decimal(8, 2)
-  pos_ym   Decimal?   @db.Decimal(8, 2)
-  orienta  String?    @default("horizontal") @db.VarChar(20)
-  th_rihri th_rihri[]
-  tm_culti tm_culti?  @relation(fields: [culti_id], references: [culti_id], onDelete: NoAction, onUpdate: NoAction)
-  tm_inver tm_inver?  @relation(fields: [inver_id], references: [inver_id], onDelete: Cascade, onUpdate: NoAction)
-  tt_dispo tt_dispo[]
-  tt_progr tt_progr[]
+  cante_id  String     @id @db.VarChar(10)
+  cante_nm  String     @db.VarChar(100)
+  inver_id  String?    @db.VarChar(20)
+  culti_id  Int?
+  cante_mi  Decimal?   @db.Decimal(5, 2)
+  cante_ma  Decimal?   @db.Decimal(5, 2)
+  cante_an  Decimal?   @db.Decimal(5, 2)
+  cante_la  Decimal?   @db.Decimal(5, 2)
+  pos_xm    Decimal?   @db.Decimal(8, 2)
+  pos_ym    Decimal?   @db.Decimal(8, 2)
+  orienta   String?    @default("horizontal") @db.VarChar(20)
+  cante_fs  DateTime?  @db.Date
+  deletedAt DateTime?
+  th_rihri  th_rihri[]
+  tm_culti  tm_culti?  @relation(fields: [culti_id], references: [culti_id], onDelete: NoAction, onUpdate: NoAction)
+  tm_inver  tm_inver?  @relation(fields: [inver_id], references: [inver_id], onDelete: Cascade, onUpdate: NoAction)
+  tt_dispo  tt_dispo[]
+  tt_progr  tt_progr[]
+}
+
+model tm_categ {
+  categ_id Int        @id @default(autoincrement())
+  categ_nm String     @unique @db.VarChar(100)
+  tm_culti tm_culti[]
 }
 
 model tm_culti {
@@ -63,7 +71,10 @@ model tm_culti {
   culti_nm String     @unique @db.VarChar(100)
   culti_mi Decimal?   @db.Decimal(5, 2)
   culti_ma Decimal?   @db.Decimal(5, 2)
+  culti_tc Int?
+  culti_cg Int?
   tm_cante tm_cante[]
+  tm_categ tm_categ?  @relation(fields: [culti_cg], references: [categ_id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model tm_inver {
@@ -76,6 +87,7 @@ model tm_inver {
   inver_an  Decimal?   @db.Decimal(10, 2)
   inver_la  Decimal?   @db.Decimal(10, 2)
   inver_pa  Decimal?   @db.Decimal(5, 2)
+  deletedAt DateTime?
   tm_cante  tm_cante[]
   tt_dispo  tt_dispo[]
 }
@@ -127,8 +139,10 @@ model tm_usuar {
   usuar_fc  DateTime?  @default(now()) @db.Timestamp(6)
   usuar_at  DateTime?  @db.Timestamp(6)
   usuar_est String?    @default("activo") @db.VarChar(20)
+  th_audit  th_audit[]
   th_mante  th_mante[]
   th_rihri  th_rihri[]
+  tt_estop  tt_estop[]
   tm_roles  tm_roles?  @relation(fields: [roles_id], references: [roles_id], onDelete: NoAction, onUpdate: NoAction)
   tp_param  tp_param[]
 }
@@ -157,21 +171,22 @@ model tt_alert {
 }
 
 model tt_dispo {
-  dispo_id String     @id @db.VarChar(20)
-  dispo_tg String?    @db.VarChar(100)
-  tipod_id Int
-  cante_id String?    @db.VarChar(10)
-  inver_id String?    @db.VarChar(20)
-  dispo_et String?    @default("Operativo") @db.VarChar(20)
-  dispo_sm Boolean?   @default(false)
-  dispo_fc DateTime?  @default(now()) @db.Timestamp(6)
-  th_mante th_mante[]
-  tt_alert tt_alert[]
-  tm_cante tm_cante?  @relation(fields: [cante_id], references: [cante_id], onUpdate: NoAction)
-  tm_inver tm_inver?  @relation(fields: [inver_id], references: [inver_id], onDelete: Cascade, onUpdate: NoAction)
-  tm_tipod tm_tipod   @relation(fields: [tipod_id], references: [tipod_id], onDelete: NoAction, onUpdate: NoAction)
-  tt_lectu tt_lectu[]
-  tt_logco tt_logco[]
+  dispo_id  String     @id @db.VarChar(20)
+  dispo_tg  String?    @db.VarChar(100)
+  tipod_id  Int
+  cante_id  String?    @db.VarChar(10)
+  inver_id  String?    @db.VarChar(20)
+  dispo_et  String?    @default("Operativo") @db.VarChar(20)
+  dispo_sm  Boolean?   @default(false)
+  dispo_fc  DateTime?  @default(now()) @db.Timestamp(6)
+  deletedAt DateTime?
+  th_mante  th_mante[]
+  tt_alert  tt_alert[]
+  tm_cante  tm_cante?  @relation(fields: [cante_id], references: [cante_id], onUpdate: NoAction)
+  tm_inver  tm_inver?  @relation(fields: [inver_id], references: [inver_id], onDelete: Cascade, onUpdate: NoAction)
+  tm_tipod  tm_tipod   @relation(fields: [tipod_id], references: [tipod_id], onDelete: NoAction, onUpdate: NoAction)
+  tt_lectu  tt_lectu[]
+  tt_logco  tt_logco[]
 }
 
 model tt_lectu {
@@ -220,6 +235,18 @@ model tt_progr {
   @@index([cante_id], map: "idx_progr_cante")
 }
 
+model th_audit {
+  audit_id Int       @id @default(autoincrement())
+  audit_fe DateTime? @default(now()) @db.Timestamp(6)
+  usuar_id Int?
+  audit_ac String    @db.VarChar(100)
+  audit_ds String?   @db.Text
+
+  tm_usuar tm_usuar? @relation(fields: [usuar_id], references: [usuar_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([audit_fe(sort: Desc)], map: "idx_audit_fe")
+}
+
 model tt_rolpe {
   rolpe_id Int      @id @default(autoincrement())
   roles_id Int
@@ -228,4 +255,23 @@ model tt_rolpe {
   tm_roles tm_roles @relation(fields: [roles_id], references: [roles_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([roles_id, permi_id])
+}
+
+model tt_estop {
+  estop_id Int       @id @default(autoincrement())
+  estop_tp String    @db.VarChar(50)
+  estop_in DateTime  @default(now()) @db.Timestamp(6)
+  estop_fn DateTime  @db.Timestamp(6)
+  usuar_id Int?
+  estop_mo String    @db.Text
+  estop_av Boolean?  @default(true)
+  tm_usuar tm_usuar? @relation(fields: [usuar_id], references: [usuar_id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model tt_simet {
+  simet_id Int       @id @default(autoincrement())
+  cante_id String    @db.VarChar(10)
+  simet_ev String    @db.VarChar(50)
+  simet_vl String    @db.VarChar(50)
+  simet_fh DateTime  @default(now()) @db.Timestamp(6)
 }

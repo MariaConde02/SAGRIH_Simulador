@@ -4,7 +4,7 @@
  */
 import { prisma, cargarCache, invalidarCache, CACHE_TTL } from './db.config.js';
 import { generarLecturas, TIPOS_IGNORADOS } from './sensorGenerator.js';
-import { verificarAlertas, verificarProgramasRiego } from './alertService.js';
+import { verificarAlertas, verificarProgramasRiego, verificarValvulasAbiertas } from './alertService.js';
 
 // ─── Intervalos ───────────────────────────────────────────────────────────────
 const CICLO_LECTURAS  = 15_000;   // cada 15 segundos
@@ -12,7 +12,13 @@ const CICLO_ALERTAS   = 30_000;   // cada 30 segundos
 const RETRY_SIN_DATOS = 60_000;   // espera 1 min si no hay dispositivos
 
 function ts() {
-  return `[${new Date().toISOString().replace('T', ' ').slice(0, 19)}]`;
+  const f = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Caracas', 
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  }).format(new Date());
+  return `[${f.replace(', ', ' ')}]`;
 }
 
 // ─── Inicializar parámetro de bomba si no existe ─────────────────────────────
@@ -74,14 +80,12 @@ async function iniciar() {
 
   // Ciclos recurrentes
   setInterval(async () => {
-    const act = await generarLecturas();
-    if (act > 0) {
-      console.log(`${ts()} Lecturas insertadas — ${act} inserciones realizadas`);
-    }
+    await generarLecturas();
   }, CICLO_LECTURAS);
 
   setInterval(verificarAlertas,         CICLO_ALERTAS);
   setInterval(verificarProgramasRiego,  CICLO_ALERTAS);
+  setInterval(verificarValvulasAbiertas, CICLO_ALERTAS);
   
   // Invalidar cache para releer dispositivos nuevos
   setInterval(invalidarCache, CACHE_TTL);
