@@ -5,16 +5,7 @@
 import { prisma, cargarCache, invalidarCache, CACHE_TTL } from './db.config.js';
 import { generarLecturas, TIPOS_IGNORADOS } from './sensorGenerator.js';
 import { verificarAlertas, verificarProgramasRiego, verificarValvulasAbiertas } from './alertService.js';
-import * as http from 'http';
 
-// ─── Servidor Web Falso para Render (Web Service Gratuito) ───────────────────
-const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Simulador SAGRIH operando correctamente en segundo plano.\n');
-}).listen(PORT, () => {
-  console.log(`[Web Service] Escuchando en el puerto ${PORT} para engañar a Render.`);
-});
 // ─── Intervalos ───────────────────────────────────────────────────────────────
 const CICLO_LECTURAS  = 15_000;   // cada 15 segundos
 const CICLO_ALERTAS   = 30_000;   // cada 30 segundos
