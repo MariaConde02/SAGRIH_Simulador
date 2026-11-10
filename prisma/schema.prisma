@@ -1,6 +1,6 @@
 generator client {
   provider   = "prisma-client-js"
-  output     = "../generated/prisma"
+  output = "../generated/prisma"
   engineType = "library"
 }
 
@@ -26,7 +26,7 @@ model th_mante {
 model th_rihri {
   rihri_id Int       @id @default(autoincrement())
   cante_id String    @db.VarChar(10)
-  rihri_ta String?   @default("Automático") @db.VarChar(20)
+  rihri_ta String?   @default("AutomÃ¡tico") @db.VarChar(20)
   rihri_fi DateTime? @default(now()) @db.Timestamp(6)
   rihri_ff DateTime? @db.Timestamp(6)
   rihri_vl Decimal?  @db.Decimal(10, 2)
@@ -52,12 +52,14 @@ model tm_cante {
   pos_ym    Decimal?   @db.Decimal(8, 2)
   orienta   String?    @default("horizontal") @db.VarChar(20)
   cante_fs  DateTime?  @db.Date
+  cante_est Boolean?   @default(true)
   deletedAt DateTime?
   th_rihri  th_rihri[]
   tm_culti  tm_culti?  @relation(fields: [culti_id], references: [culti_id], onDelete: NoAction, onUpdate: NoAction)
   tm_inver  tm_inver?  @relation(fields: [inver_id], references: [inver_id], onDelete: Cascade, onUpdate: NoAction)
   tt_dispo  tt_dispo[]
   tt_progr  tt_progr[]
+  th_suelo  th_suelo[]
 }
 
 model tm_categ {
@@ -73,6 +75,7 @@ model tm_culti {
   culti_ma Decimal?   @db.Decimal(5, 2)
   culti_tc Int?
   culti_cg Int?
+  deletedAt DateTime?
   tm_cante tm_cante[]
   tm_categ tm_categ?  @relation(fields: [culti_cg], references: [categ_id], onDelete: NoAction, onUpdate: NoAction)
 }
@@ -90,6 +93,8 @@ model tm_inver {
   deletedAt DateTime?
   tm_cante  tm_cante[]
   tt_dispo  tt_dispo[]
+  tt_estop  tt_estop[]
+  th_clima  th_clima[]
 }
 
 model tm_permi {
@@ -139,10 +144,12 @@ model tm_usuar {
   usuar_fc  DateTime?  @default(now()) @db.Timestamp(6)
   usuar_at  DateTime?  @db.Timestamp(6)
   usuar_est String?    @default("activo") @db.VarChar(20)
+  usuar_reqpw Boolean? @default(true)
   th_audit  th_audit[]
   th_mante  th_mante[]
   th_rihri  th_rihri[]
   tt_estop  tt_estop[]
+  tt_manpr  tt_manpr[]
   tm_roles  tm_roles?  @relation(fields: [roles_id], references: [roles_id], onDelete: NoAction, onUpdate: NoAction)
   tp_param  tp_param[]
 }
@@ -179,8 +186,12 @@ model tt_dispo {
   dispo_et  String?    @default("Operativo") @db.VarChar(20)
   dispo_sm  Boolean?   @default(false)
   dispo_fc  DateTime?  @default(now()) @db.Timestamp(6)
+  // Trazabilidad administrativa - Fase 1 (opcionales: no rompen registros existentes)
+  dispo_mk  String?    @db.VarChar(50)
+  dispo_md  String?    @db.VarChar(50)
   deletedAt DateTime?
   th_mante  th_mante[]
+  tt_manpr  tt_manpr[]
   tt_alert  tt_alert[]
   tm_cante  tm_cante?  @relation(fields: [cante_id], references: [cante_id], onUpdate: NoAction)
   tm_inver  tm_inver?  @relation(fields: [inver_id], references: [inver_id], onDelete: Cascade, onUpdate: NoAction)
@@ -228,6 +239,7 @@ model tt_progr {
   progr_dr Int
   progr_at Boolean?   @default(true)
   progr_fc DateTime?  @default(now()) @db.Timestamp(6)
+  deletedAt DateTime?
   th_rihri th_rihri[]
   tt_progd tt_progd[]
   tm_cante tm_cante   @relation(fields: [cante_id], references: [cante_id], onDelete: Cascade, onUpdate: NoAction)
@@ -265,7 +277,10 @@ model tt_estop {
   usuar_id Int?
   estop_mo String    @db.Text
   estop_av Boolean?  @default(true)
+  // Alcance de la parada: NULL = global (registros histÃ³ricos), valor = invernadero
+  inver_id String?   @db.VarChar(20)
   tm_usuar tm_usuar? @relation(fields: [usuar_id], references: [usuar_id], onDelete: NoAction, onUpdate: NoAction)
+  tm_inver tm_inver? @relation(fields: [inver_id], references: [inver_id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model tt_simet {
@@ -274,4 +289,40 @@ model tt_simet {
   simet_ev String    @db.VarChar(50)
   simet_vl String    @db.VarChar(50)
   simet_fh DateTime  @default(now()) @db.Timestamp(6)
+}
+
+model tt_manpr {
+  manpr_id  Int       @id @default(autoincrement())
+  manpr_ta  String    @db.VarChar(100)
+  usuar_id  Int?
+  dispo_id  String?   @db.VarChar(20)
+  manpr_ob  String?   @db.Text
+  manpr_rp  String    @db.VarChar(20) // "semanal", "mensual"
+  manpr_nx  DateTime  @default(now()) @db.Timestamp(6)
+  manpr_st  Boolean?  @default(true)
+  
+  tm_usuar  tm_usuar? @relation(fields: [usuar_id], references: [usuar_id], onDelete: NoAction, onUpdate: NoAction)
+  tt_dispo  tt_dispo? @relation(fields: [dispo_id], references: [dispo_id], onUpdate: NoAction)
+}
+
+model th_clima {
+  clima_id Int       @id @default(autoincrement())
+  inver_id String    @db.VarChar(20)
+  clima_fe DateTime  @db.Timestamp(6)
+  clima_te Float?
+  clima_hr Float?
+  clima_lz Float?
+  tm_inver tm_inver  @relation(fields: [inver_id], references: [inver_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([inver_id, clima_fe(sort: Desc)], map: "idx_clima_inver_fe")
+}
+
+model th_suelo {
+  suelo_id Int       @id @default(autoincrement())
+  cante_id String    @db.VarChar(10)
+  suelo_fe DateTime  @db.Timestamp(6)
+  suelo_hu Float?
+  tm_cante tm_cante  @relation(fields: [cante_id], references: [cante_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([cante_id, suelo_fe(sort: Desc)], map: "idx_suelo_cante_fe")
 }

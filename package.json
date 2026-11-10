@@ -4,19 +4,21 @@
   "type": "module",
   "description": "Simulador IoT como Microservicio",
   "scripts": {
+    "build": "prisma generate",
+    "postinstall": "prisma generate",
     "start": "tsx index.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "cors": "^2.8.6",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "prisma": "^5.22.0",
+    "tsx": "^4.22.4"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/node": "^26.0.0",
     "@types/pg": "^8.20.0",
-    "prisma": "^5.22.0",
-    "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }
 }

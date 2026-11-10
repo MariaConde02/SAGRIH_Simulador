@@ -5,6 +5,7 @@
 import { prisma, cargarCache, invalidarCache, CACHE_TTL } from './db.config.js';
 import { generarLecturas, TIPOS_IGNORADOS } from './sensorGenerator.js';
 import { verificarAlertas, verificarProgramasRiego, verificarValvulasAbiertas } from './alertService.js';
+import { evaluarActuadores } from './actuatorService.js';
 
 // ─── Intervalos ───────────────────────────────────────────────────────────────
 const CICLO_LECTURAS  = 15_000;   // cada 15 segundos
@@ -25,6 +26,14 @@ function ts() {
 async function inicializarParametros() {
   const defaults = [
     ['BOMBA_ACTIVA', 'true', 'Estado de la bomba principal'],
+    ['VENT_MODO', 'auto', 'Modo de control del ventilador (auto|manual)'],
+    ['VENT_ESTADO', 'off', 'Estado actual del ventilador (on|off)'],
+    ['VENT_TEMP_ON', '28', 'Temperatura (°C) a partir de la cual se enciende el ventilador'],
+    ['VENT_TEMP_OFF', '26', 'Temperatura (°C) a partir de la cual se apaga el ventilador'],
+    ['LUZ_MODO', 'auto', 'Modo de control de luces (auto|manual)'],
+    ['LUZ_ESTADO', 'off', 'Estado actual de las luces (on|off)'],
+    ['LUZ_TEMP_ON', '18', 'Temperatura (°C) a partir de la cual se encienden las luces'],
+    ['LUZ_TEMP_OFF', '20', 'Temperatura (°C) a partir de la cual se apagan las luces'],
   ];
   for (const [clave, valor, desc] of defaults) {
     await prisma.$executeRaw`
@@ -71,27 +80,45 @@ async function iniciar() {
     console.log(`   ${s.dispo_id.padEnd(20)} ${s.tipod_nm.padEnd(25)} Cantero: ${s.cante_id || '—'}`);
   }
 
-  // Primera generación inmediata
-  const insertados = await generarLecturas();
-  if (insertados > 0) {
-    console.log(`${ts()} Lecturas iniciales insertadas — ${sensoresActivos.length} sensores activos`);
+  // Primera generación inmediata (si Neon aún no responde, los intervalos
+  // posteriores reintentan — no debe tumbar el proceso en el arranque)
+  try {
+    await evaluarActuadores();
+    const insertados = await generarLecturas();
+    if (insertados > 0) {
+      console.log(`${ts()} Lecturas iniciales insertadas — ${sensoresActivos.length} sensores activos`);
+    }
+  } catch (err: any) {
+    console.error(`${ts()} Error en primera generación (se reintentará en el próximo ciclo):`, err.message);
   }
-  await verificarAlertas();
+  await verificarAlertas().catch(err => console.error(`${ts()} Error verificando alertas iniciales:`, err.message));
 
-  // Ciclos recurrentes
-  setInterval(async () => {
+  // Ciclos recurrentes — evaluar actuadores antes de generar lecturas
+  // para que el efecto del ventilador aplique desde el mismo ciclo.
+  // try/catch: un blip de red con Neon (P1017) no debe matar el proceso.
+  const cicloSeguro = (nombre: string, fn: () => Promise<unknown>) => async () => {
+    try {
+      await fn();
+    } catch (err: any) {
+      console.error(`[${nombre}] Error en ciclo (se reintentará en el próximo ciclo):`, err.message);
+    }
+  };
+
+  setInterval(cicloSeguro('sensors', async () => {
+    await evaluarActuadores();
     await generarLecturas();
-  }, CICLO_LECTURAS);
+  }), CICLO_LECTURAS);
 
-  setInterval(verificarAlertas,         CICLO_ALERTAS);
-  setInterval(verificarProgramasRiego,  CICLO_ALERTAS);
-  setInterval(verificarValvulasAbiertas, CICLO_ALERTAS);
+  setInterval(cicloSeguro('alerts', verificarAlertas),         CICLO_ALERTAS);
+  setInterval(cicloSeguro('riego', verificarProgramasRiego),   CICLO_ALERTAS);
+  setInterval(cicloSeguro('valvulas', verificarValvulasAbiertas), CICLO_ALERTAS);
   
   // Invalidar cache para releer dispositivos nuevos
   setInterval(invalidarCache, CACHE_TTL);
 
   console.log(`\n${ts()} Simulador iniciado:`);
   console.log(`   • Lecturas :  cada ${CICLO_LECTURAS / 1000}s`);
+  console.log(`   • Actuadores: cada ${CICLO_LECTURAS / 1000}s (umbrales DHT22)`);
   console.log(`   • Alertas  :  cada ${CICLO_ALERTAS / 1000}s`);
   console.log(`   • Ctrl+C para detener\n`);
 }

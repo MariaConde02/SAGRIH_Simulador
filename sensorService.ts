@@ -45,13 +45,15 @@ export class SensorService {
   }
 
   /**
-   * Registra un riego de emergencia en el historial
+   * Registra un riego de emergencia en el historial.
+   * RIHRI_VL inicia en 0: el consumo real se acumula por ciclo en el bucle
+   * de generación (0.3 L/ciclo con caudal 1.2 L/min) — evitar doble contabilidad.
    */
   static async registrarRiegoEmergencia(canteId: number, minutos: number, caudalNominal: number) {
-    const aguaUsada = caudalNominal * minutos;
+    void caudalNominal; // El caudal se aplica por ciclo en el bucle de consumo continuo
     await prisma.$queryRaw`
       INSERT INTO TH_RIHRI (CANTE_ID, RIHRI_TA, RIHRI_FI, RIHRI_FF, RIHRI_VL)
-      VALUES (${canteId}, 'Emergencia', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + (${minutos} * INTERVAL '1 minute'), ${Math.round(aguaUsada * 100) / 100})
+      VALUES (${canteId}, 'Emergencia', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + (${minutos} * INTERVAL '1 minute'), 0)
     `;
   }
 }

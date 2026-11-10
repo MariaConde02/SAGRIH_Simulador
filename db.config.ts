@@ -7,7 +7,8 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(__dirname, '../backend/.env') });
+dotenv.config(); // Cargar .env del propio simulador / variables de entorno de Render
+dotenv.config({ path: resolve(__dirname, '../backend/.env') }); // Compatibilidad para desarrollo local conjunto
 
 export { prisma };
 

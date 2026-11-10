@@ -2,7 +2,8 @@
  * alerts.ts — Verificación de umbrales y alertas automáticas, además de ejecución de riegos.
  * Implementa M2.4: alertas automáticas de tanque (media/crítica) y humedad.
  */
-import { prisma, cargarCache } from './db.config.js';
+import { prisma, cargarCache, invalidarCache } from './db.config.js';
+import { alcanceDePausa } from './estopScope.js';
 
 function ts() {
   const f = new Intl.DateTimeFormat('en-CA', {
@@ -152,6 +153,14 @@ export async function verificarProgramasRiego() {
     const bombaActiva = params.BOMBA_ACTIVA === 'true';
     if (!bombaActiva) return;
 
+    // Fase 0.5: Pausa (TT_ESTOP) — abortar riego automático programado.
+    // Global = todo el complejo; sectorizada = solo canteros del invernadero.
+    const pausa = await alcanceDePausa();
+    if (pausa?.global) {
+      console.log(`${ts()} 🛑 PAUSA GLOBAL (TT_ESTOP): Riego automático programado suspendido.`);
+      return;
+    }
+
     const ahora = new Date();
     const formatterHour = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit', hour12: false });
     let horaActual = formatterHour.format(ahora);
@@ -173,6 +182,11 @@ export async function verificarProgramasRiego() {
     `;
 
     for (const prog of programas) {
+      // Pausa sectorizada: omitir solo los canteros del invernadero parado
+      if (pausa && pausa.canteIds.has(prog.cante_id)) {
+        console.log(`${ts()} 🛑 PAUSA SECTORIZADA (TT_ESTOP): riego programado del cantero ${prog.cante_id} suspendido.`);
+        continue;
+      }
       const yaEjecutado = await prisma.$queryRaw<any[]>`
         SELECT 1 FROM TH_RIHRI
          WHERE CANTE_ID = ${prog.cante_id} AND PROGR_ID = ${prog.progr_id}
@@ -213,13 +227,12 @@ export async function verificarProgramasRiego() {
       
       if (cancelado) continue;
 
-      const caudal    = parseFloat(params.RIEGO_CAUDAL_NOMINAL || '1.2');
-      const aguaUsada = caudal * prog.progr_dr;
-
+      // RIHRI_VL inicia en 0: el consumo real se acumula por ciclo en el bucle
+      // de generación (0.3 L/ciclo con caudal 1.2 L/min) — evitar doble contabilidad.
       await prisma.$queryRaw`
         INSERT INTO TH_RIHRI (CANTE_ID, RIHRI_TA, RIHRI_FI, RIHRI_FF, RIHRI_VL, PROGR_ID)
          VALUES (${prog.cante_id}, 'Automático', CURRENT_TIMESTAMP,
-                 CURRENT_TIMESTAMP + (${prog.progr_dr} || ' minutes')::INTERVAL, ${Math.round(aguaUsada * 100) / 100}, ${prog.progr_id})
+                 CURRENT_TIMESTAMP + (${prog.progr_dr} || ' minutes')::INTERVAL, 0, ${prog.progr_id})
       `;
       
       const valvula = await prisma.tt_dispo.findFirst({
@@ -233,6 +246,7 @@ export async function verificarProgramasRiego() {
           where: { dispo_id: valvula.dispo_id },
           data: { dispo_et: 'Abierta' }
         });
+        invalidarCache(); // Refrescar caché de sensores: el riego programado debe verse al instante
       }
       
       // Resolver alertas de humedad baja si las hay
@@ -282,6 +296,7 @@ export async function verificarValvulasAbiertas() {
         where: { dispo_id: v.dispo_id },
         data: { dispo_et: 'Operativo' }
       });
+      invalidarCache(); // Refrescar caché: el cierre debe verse al instante en la física del simulador
       console.log(`${ts()} 🛑 Válvula cerrada (Timeout persistente superado): Cantero ${v.cante_id}`);
       
       const riegoActivo = await prisma.th_rihri.findFirst({
@@ -290,13 +305,6 @@ export async function verificarValvulasAbiertas() {
       });
       
       if (riegoActivo) {
-        // En NodeJS ESM necesitamos usar la importación dinámica o estática arriba.
-        // Asumiendo que podemos usar import estático de sensorGenerator.ts, pero 
-        // para evitar dependencias circulares (index importa ambos), 
-        // importamos el helper dinámicamente o asumiendo import global.
-        const { deducirAguaTanque } = await import('./sensorGenerator.js');
-        const { params } = await import('./db.config.js');
-        
         const ahoraMs = Date.now();
         // El consumo de agua ahora se registra en tiempo real (flujo continuo)
         // por lo que ya no hacemos overwrite de rihri_vl ni deducimos del tanque aquí.

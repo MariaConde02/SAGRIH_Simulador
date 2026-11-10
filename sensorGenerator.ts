@@ -4,6 +4,8 @@
  */
 import { prisma, cargarCache } from './db.config.js';
 import { SensorService } from './sensorService.js';
+import { getActuadores } from './actuatorService.js';
+import { alcanceDePausa } from './estopScope.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,7 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ─── Tipos que no generan lecturas propias ────────────────────────────────────
-const TIPOS_IGNORADOS = new Set(['Controlador', 'Válvula', 'Actuador', 'Bomba']);
+const TIPOS_IGNORADOS = new Set(['Controlador', 'Válvula', 'Actuador', 'Bomba', 'Ventilador 12V', 'Luces LED']);
 
 // ─── Estado en memoria por dispositivo ───────────────────────────────────────
 const estado: any = {};
@@ -33,8 +35,6 @@ export function forzarHumedad(id: string, delta: number) {
     estado[id]['humedad'] = clamp(estado[id]['humedad'] + delta, 0, 100);
   }
 }
-
-import { prisma } from './db.config.js';
 
 async function initEstado(id: string, campo: string, valorDefault: number) {
   if (!estado[id]) estado[id] = {};
@@ -126,8 +126,17 @@ export async function generarLecturas() {
   const canterosUnicos = [...new Set(sensores.filter((s: any) => s.cante_id).map((s: any) => s.cante_id))];
   
   for (const cante_id of canterosUnicos) {
+    // Un riego está activo si aún no se finaliza (ff IS NULL) o si su fin
+    // programado aún no llega (ff futuro). Antes solo se consideraba ff NULL,
+    // por lo que el "asesino de huérfanas" cerraba al instante las válvulas
+    // de los riegos automáticos/emergencia (cuyo ff se precalcula al abrir)
+    // y la humedad de los canteros nunca se recuperaba (enclavados en rojo).
+    const ahora = new Date();
     const riegosActivos = await prisma.th_rihri.findMany({
-      where: { cante_id: String(cante_id), rihri_ff: null },
+      where: {
+        cante_id: String(cante_id),
+        OR: [{ rihri_ff: null }, { rihri_ff: { gt: ahora } }]
+      },
       orderBy: { rihri_fi: 'desc' }
     });
 
@@ -144,26 +153,29 @@ export async function generarLecturas() {
       }
 
       // 2. Timeout Enforcer para Riego Manual (Parametrizado)
-      const riegoPrincipal = riegosActivos[0];
-      const minutosAbierto = (Date.now() - riegoPrincipal.rihri_fi.getTime()) / 60000;
       const timeoutParam = parseFloat(params.TIEMPO_MAX_MANUAL || '15');
-      
-      if (minutosAbierto >= timeoutParam && riegoPrincipal.rihri_ta === 'Manual') {
-        await prisma.th_rihri.update({
-          where: { rihri_id: riegoPrincipal.rihri_id },
-          data: { rihri_ff: new Date() }
-        });
-        
-        const valvula = sensores.find((s: any) => s.cante_id === cante_id && s.tipod_nm === 'Válvula');
-        if (valvula) {
-          await prisma.tt_dispo.update({
-            where: { dispo_id: valvula.dispo_id },
-            data: { dispo_et: 'Operativo' }
+      const riegosManuales = riegosActivos.filter((r: any) => r.rihri_ta === 'Manual');
+
+      for (const riegoManual of riegosManuales) {
+        const minutosAbierto = (Date.now() - riegoManual.rihri_fi.getTime()) / 60000;
+
+        if (minutosAbierto >= timeoutParam) {
+          await prisma.th_rihri.update({
+            where: { rihri_id: riegoManual.rihri_id },
+            data: { rihri_ff: new Date() }
           });
-          valvula.dispo_et = 'Operativo'; // Sync estado en memoria
-          await SensorService.dispararAlerta(valvula.dispo_id, 'alta', `Cierre forzoso de válvula manual en Cantero ${cante_id} por Timeout (>15 min). Posible pérdida de conexión del cliente.`);
+          
+          const valvula = sensores.find((s: any) => s.cante_id === cante_id && s.tipod_nm === 'Válvula');
+          if (valvula) {
+            await prisma.tt_dispo.update({
+              where: { dispo_id: valvula.dispo_id },
+              data: { dispo_et: 'Operativo' }
+            });
+            valvula.dispo_et = 'Operativo'; // Sync estado en memoria
+            await SensorService.dispararAlerta(valvula.dispo_id, 'alta', `Cierre forzoso de válvula manual en Cantero ${cante_id} por Timeout (>15 min). Posible pérdida de conexión del cliente.`);
+          }
+          console.log(`[SIMULADOR] 🚨 TIMEOUT ENFORCER: Válvula de cantero ${cante_id} cerrada a la fuerza.`);
         }
-        console.log(`[SIMULADOR] 🚨 TIMEOUT ENFORCER: Válvula de cantero ${cante_id} cerrada a la fuerza.`);
       }
     } else {
       // 3. Asesino de Válvulas Huérfanas / Fantasma
@@ -203,34 +215,34 @@ export async function generarLecturas() {
     }
   }
 
-  // Fase 0.5: Global Pause (TT_ESTOP) Validator
-  const pausaGlobal = await prisma.tt_estop.findFirst({
-    where: {
-      estop_av: true,
-      estop_fn: { gt: new Date() }
-    }
-  });
+  // Fase 0.5: Pause (TT_ESTOP) Validator — alcance global o sectorizado
+  const pausaGlobal = await alcanceDePausa();
 
-  if (pausaGlobal) {
+  if (pausaGlobal?.global) {
     console.log(`[SIMULADOR] 🛑 PAUSA GLOBAL ACTIVA: Abortando operaciones de riego automático y de emergencia.`);
     // Opcional: Cerrar válvulas abiertas (seguridad)
+  } else if (pausaGlobal) {
+    console.log(`[SIMULADOR] 🛑 PAUSA SECTORIZADA (TT_ESTOP): ${pausaGlobal.canteIds.size} cantero(s) suspendido(s).`);
   }
 
   // Fase 2: Consumo Continuo por Válvulas Abiertas (Calculado en cada ciclo de 15s)
   const valvulasAbiertas = sensores.filter((s: any) => s.tipod_nm === 'Válvula' && s.dispo_et === 'Abierta');
   if (valvulasAbiertas.length > 0) {
-    const caudalNominal = parseFloat(params.RIEGO_CAUDAL_NOMINAL || '3.33');
-    const consumoPorValvula = (caudalNominal / 60) * 15; // L gastados en 15 segundos
+    // Caudal nominal de la bomba: 1.2 L/min → 0.02 L/s → 0.3 L por ciclo de 15s
+    const caudalNominal = parseFloat(params.RIEGO_CAUDAL_NOMINAL || '1.2');
+    const consumoPorValvula = (caudalNominal / 60) * 15; // L gastados en 15 segundos (0.3 L con caudal 1.2)
     let consumoTotalCiclo = 0;
 
     for (const v of valvulasAbiertas) {
       if (v.cante_id) {
         consumoTotalCiclo += consumoPorValvula;
-        // Sumar al riego activo de forma blindada (sólo al registro único validado)
+        // Sumar al riego activo de forma blindada (registro sin finalizar o
+        // con fin programado aún no vencido — los automáticos/emergencia llevan
+        // rihri_ff precalculado, no NULL)
         await prisma.$executeRaw`
           UPDATE th_rihri 
           SET rihri_vl = COALESCE(rihri_vl, 0) + ${consumoPorValvula} 
-          WHERE rihri_id = (SELECT rihri_id FROM th_rihri WHERE cante_id = ${v.cante_id} AND rihri_ff IS NULL ORDER BY rihri_fi DESC LIMIT 1)
+          WHERE rihri_id = (SELECT rihri_id FROM th_rihri WHERE cante_id = ${v.cante_id} AND (rihri_ff IS NULL OR rihri_ff > NOW()) ORDER BY rihri_fi DESC LIMIT 1)
         `;
       }
     }
@@ -306,10 +318,10 @@ export async function generarLecturas() {
           ciclosEspera = Math.floor(Math.random() * 4) + 2; // 2 a 5 ciclos
           setEstado(id, 'ciclos_espera', ciclosEspera);
 
-          const riegoBoost = 0.6 + Math.random() * 0.3; // +0.6% a +0.9%
+          const riegoBoost = 3.0 + Math.random() * 1.0; // +3.0% a +4.0% (≈3.5% medio por ciclo de 15s)
           delta = riegoBoost;
           humedadTemporal += delta;
-          valor = clamp(humedadTemporal, 0, 100);
+          valor = clamp(humedadTemporal, 0, maximoOptimo);
         } else {
           // Válvula cerrada: evaluar evaporación
           if (ciclosEspera <= 0) {
@@ -362,6 +374,10 @@ export async function generarLecturas() {
               where: { dispo_id: valvulaId },
               data: { dispo_et: 'Operativo' }
             });
+            // Sincronizar memoria (evita el falso "INCONSISTENCIA" del asesino
+            // de huérfanas en el próximo ciclo)
+            const valvMem = sensores.find((s: any) => s.dispo_id === valvulaId);
+            if (valvMem) valvMem.dispo_et = 'Operativo';
 
             // Cortar riego en historial
             const riegoActivo = await prisma.th_rihri.findFirst({
@@ -402,8 +418,8 @@ export async function generarLecturas() {
         } else {
           // 4. Auto-Riego de Emergencia (Prevención de Estrés Hídrico)
           
-          // Bloquear si hay pausa global
-          if (pausaGlobal) {
+          // Bloquear si hay pausa global o una pausa que cubra este cantero
+          if (pausaGlobal && (pausaGlobal.global || pausaGlobal.canteIds.has(sensor.cante_id))) {
             setEstado(id, 'humedad', valor);
             continue; // Skip emergency watering logic entirely
           }
@@ -433,6 +449,10 @@ export async function generarLecturas() {
                     where: { dispo_id: valvulaId },
                     data: { dispo_et: 'Abierta' }
                   });
+                  // Sincronizar memoria (la física del riego y el consumo del
+                  // ciclo arrancan de inmediato, sin esperar la caché de 60s)
+                  const valvMem = sensores.find((s: any) => s.dispo_id === valvulaId);
+                  if (valvMem) valvMem.dispo_et = 'Abierta';
 
                   // Registrar en TH_RIHRI por 10 minutos usando el servicio
                   const caudal = parseFloat(params.RIEGO_CAUDAL_NOMINAL || '1.2');
@@ -463,20 +483,25 @@ export async function generarLecturas() {
         const guardado = await registrarLectura(id, 'humedad', valor, uid, 0.0); // 0% absoluto de delta para forzar insert
         if (guardado) insertados++; else ignorados++;
 
-      // ── Sensor Ambiente: temperatura + humedad ambiente ───────────────────
+      // ── Sensor Ambiente (DHT22): temperatura + humedad ambiente ────────────
       } else if (tipo === 'Sensor Ambiente') {
-        // Temperatura: 18°C – 35°C (M2.3)
-        const baseT = getEstado(id, 'temperatura', 24 + Math.random() * 4);
-        const temp  = clamp(gaussiana(baseT, 1.2), 18, 35);
+        // Temperatura ambiente (DHT22): 15°C – 35°C
+        // Efecto de actuadores: el ventilador enfría, las luces aportan calor residual
+        const { vent, luz } = getActuadores();
+        let baseT = getEstado(id, 'temperatura', 24 + Math.random() * 4);
+        if (vent) baseT -= 0.8;
+        if (luz) baseT += 0.3;
+        baseT = clamp(baseT, 15, 35);
+        const temp  = clamp(gaussiana(baseT, 1.2), 15, 35);
         setEstado(id, 'temperatura', temp);
 
         const uidC = unidades['°C'] || unidades['Grados Celsius'];
         const guardadoT = await registrarLectura(id, 'temperatura', temp, uidC, 1.0); // 1°C delta
         if (guardadoT) insertados++; else ignorados++;
 
-        // Humedad ambiente: 40% – 90% (M2.3)
+        // Humedad relativa ambiente (DHT22): 40% – 80%
         const baseH = getEstado(id, 'humAire', 62 + Math.random() * 8);
-        const humA  = clamp(gaussiana(baseH, 2), 40, 90);
+        const humA  = clamp(gaussiana(baseH, 2), 40, 80);
         setEstado(id, 'humAire', humA);
 
         const uidPct = unidades['%'] || unidades['Porcentaje'];
